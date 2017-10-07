@@ -17,7 +17,7 @@ router
 	.get('/', async (ctx, next) => {
 		ctx.body = 'hello! You shouldn\'t be here :)';
 	})
-	.get('/api/query', async (ctx, next) => {
+	.get('/query', async (ctx, next) => {
 		ctx.assert(isNumeric(ctx.query.version), 400, 'Missing first parameter');
 		const version = Number.parseInt(ctx.query.version);
 
@@ -51,7 +51,7 @@ app
   .use(router.routes())
   .use(router.allowedMethods());
 
-app.listen(3000);
+app.listen(8000);
 
 async function getLastData(id) {
 	const query = {};
