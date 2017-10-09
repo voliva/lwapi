@@ -6,9 +6,9 @@
   "dependencies": {
     "koa": "^2.3.0",
     "koa-router": "^7.2.1",
-    "tingodb": "^0.5.1"
+    "mysql2": "^1.4.2"
   },
   "scripts": {
-  	"start": "node index.js"
+    "start": "node index.js"
   }
 }

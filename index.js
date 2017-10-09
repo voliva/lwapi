@@ -1,16 +1,19 @@
 const Koa = require('koa');
 const app = new Koa();
 var router = require('koa-router')();
-const Engine = require('tingodb')();
+const mysql2 = require('mysql2/promise');
+
+const mySQLconnection = mysql2.createConnection({
+	host: process.env.SQL_DB_HOST,
+	user: process.env.SQL_DB_USER,
+	password: process.env.SQL_DB_PSW,
+	database: process.env.SQL_DB_NAME
+});
 
 // How many data points should be given any timespan (1 day, 7 days?)
 const DATA_POINTS = Math.floor(60*24/5); // 1-day 5 minutes/tick => 288 values
 // Maximum timespan to be queried (to avoid bringing in all history)
 const MAX_TS_DIF = 7*24*60*60; // 7 days
-
-const db = new Engine.Db(process.env.TINGO_DB_PATH || '../LWlogger/data', {});
-const dataCollection = db.collection('livewind-data');
-const lastDataCollection = db.collection('livewind-lastdata');
 
 const isNumeric = str => !isNaN(Number.parseInt(str));
 router
@@ -54,21 +57,20 @@ app
 app.listen(8000);
 
 async function getLastData(id) {
-	const query = {};
-	const projection = {
-		_id: 0
-	};
-	if(id === 'all') {
-		projection.stationId = 1;
-		projection.wind = 1;
-		projection.gust = 1;
-		projection.direction = 1;
-		projection.timestamp = 1;
-	}else{
-		query.stationId = Number.parseInt(id);
-	}
+	const connection = await mySQLconnection;
 
-	return await dbQuery(lastDataCollection, query, projection);
+	let rows;
+	if(id === 'all') {
+		rows = (await connection.query(`
+			SELECT stationId,wind,gust,direction,timestamp
+			FROM lastWeatherData`))[0];
+	}else{
+		rows = (await connection.execute(`
+		SELECT *
+		FROM lastWeatherData
+		WHERE stationId = ?`, [id]))[0];
+	}
+	return rows;
 }
 
 const mean_keys = ["wind", "timestamp"];
@@ -79,14 +81,14 @@ const polar_keys = [{
     p: 360
 }];
 async function getWindData(stationId, startTime, endTime) {
-	const data = await dbQuery(dataCollection, {
-		stationId,
-		timestamp: {
-			$gte: startTime,
-			$lte: endTime
-		}
-	}, {_id: 0, wind: 1, gust: 1, direction: 1, timestamp: 1}, {timestamp: 1});
+	const connection = await mySQLconnection;
 
+	const data = (await connection.execute(`
+		SELECT wind,gust,direction,timestamp
+		FROM weatherData
+		WHERE stationId = ?
+		AND timestamp BETWEEN ? AND ?
+		ORDER BY timestamp ASC`, [Number.parseInt(stationId), startTime, endTime]))[0];
 	if(data.length < DATA_POINTS) {
 		return data;
 	}
@@ -163,24 +165,4 @@ async function getWindData(stationId, startTime, endTime) {
 	}
 
 	return ret;
-}
-
-function dbQuery(collection, query, projection, sort) {
-	return new Promise((resolve, reject) => {
-		collection.find(query, projection, (err, cursor) => {
-			if(err) {
-				reject(err);
-			}else {
-				if(sort)
-					cursor = cursor.sort(sort);
-				cursor.toArray((err, result) => {
-					if(err) {
-						reject(err);
-					}else {
-						resolve(result);
-					}
-				});
-			}
-		});
-	});
 }
