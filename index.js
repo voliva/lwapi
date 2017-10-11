@@ -1,14 +1,10 @@
 const Koa = require('koa');
 const app = new Koa();
-var router = require('koa-router')();
+const router = require('koa-router')();
+const cors = require('koa-cors');
 const mysql2 = require('mysql2/promise');
 
-const mySQLconnection = mysql2.createConnection({
-	host: process.env.SQL_DB_HOST,
-	user: process.env.SQL_DB_USER,
-	password: process.env.SQL_DB_PSW,
-	database: process.env.SQL_DB_NAME
-});
+let mySQLconnection = createMySQLConnection(0);
 
 // How many data points should be given any timespan (1 day, 7 days?)
 const DATA_POINTS = Math.floor(60*24/5); // 1-day 5 minutes/tick => 288 values
@@ -51,6 +47,7 @@ router
 	});
 
 app
+  .use(cors())
   .use(router.routes())
   .use(router.allowedMethods());
 
@@ -70,6 +67,40 @@ function formatToArrayTable(rows) {
 			}
 		}))
 	]
+}
+
+async function createMySQLConnection(nErrors) {
+	nErrors = nErrors || 0;
+	if(nErrors >= 6) {
+		// After 6 tries, stop and exit
+		console.log(`Got ${nErrors} connection errors to DB in a row, stopping lwapi :(`);
+		process.exit(0);
+	}
+
+	const ret = mysql2.createConnection({
+		host: process.env.SQL_DB_HOST,
+		user: process.env.SQL_DB_USER,
+		password: process.env.SQL_DB_PSW,
+		database: process.env.SQL_DB_NAME
+	});
+
+	try {
+		const connection = await ret;
+		connection.once('error', (err) => {
+			console.log('error', err);
+			mySQLconnection = createMySQLConnection();
+		});
+		return connection;
+	}catch(ex) {
+		console.log(ex);
+		await sleep(5000);
+		return createMySQLConnection(nErrors+1);
+	}
+}
+function sleep(ms) {
+	return new Promise(resolve => {
+		setTimeout(resolve, ms);
+	});
 }
 
 async function getLastData(id) {
