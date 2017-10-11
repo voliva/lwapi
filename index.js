@@ -29,7 +29,7 @@ router
 			const lastData = ctx.query.lastData;
 			ctx.assert(isNumeric(lastData) || lastData === 'all', 400, 'wrong lastData format');
 			
-			result.lastData = await getLastData(lastData);
+			result.lastData = formatToArrayTable(await getLastData(lastData));
 		}
 		if(ctx.query.windData != null) { // id:number;start:number;end:number
 			const windData = ctx.query.windData.split(';');
@@ -45,7 +45,7 @@ router
 			const timeDiff = endTime - startTime;
 			ctx.assert(timeDiff < MAX_TS_DIF, 400, 'windData dataset too big');
 
-			result.windData = await getWindData(stationId, startTime, endTime);
+			result.windData = formatToArrayTable(await getWindData(stationId, startTime, endTime));
 		}
 		ctx.body = JSON.stringify(result);
 	});
@@ -55,6 +55,22 @@ app
   .use(router.allowedMethods());
 
 app.listen(8000);
+
+function formatToArrayTable(rows) {
+	if(rows.length === 0) return [];
+	const keys = Object.keys(rows[0]);
+	
+	return [
+		keys,
+		...rows.map(r => keys.map(k => {
+			if(typeof r[k] === 'number') {
+				return Math.round(r[k] * 100) / 100;
+			}else {
+				return r[k];
+			}
+		}))
+	]
+}
 
 async function getLastData(id) {
 	const connection = await mySQLconnection;
