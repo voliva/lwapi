@@ -19,6 +19,7 @@ router
 	.get('/query', async (ctx, next) => {
 		ctx.assert(isNumeric(ctx.query.version), 400, 'Missing first parameter');
 		const version = Number.parseInt(ctx.query.version);
+		const sessionId = Number.parseInt(ctx.query.sessionId) || null;
 
 		const result = {};
 		if(ctx.query.lastData != null) { // 'all'|id:number
@@ -26,6 +27,7 @@ router
 			ctx.assert(isNumeric(lastData) || lastData === 'all', 400, 'wrong lastData format');
 			
 			result.lastData = formatToArrayTable(await getLastData(lastData));
+			saveUserEvent(sessionId, 'lastData', lastData);
 		}
 		if(ctx.query.windData != null) { // id:number;start:number;end:number
 			const windData = ctx.query.windData.split(';');
@@ -42,6 +44,7 @@ router
 			ctx.assert(timeDiff < MAX_TS_DIF, 400, 'windData dataset too big');
 
 			result.windData = formatToArrayTable(await getWindData(stationId, startTime, endTime));
+			saveUserEvent(sessionId, 'windData', windData[0], windData[1], windData[2]);
 		}
 		ctx.body = JSON.stringify(result);
 	});
@@ -103,6 +106,22 @@ function sleep(ms) {
 	});
 }
 
+async function saveUserEvent(sessionId, query, target, timeStart = null, timeEnd = null) {
+	const connection = await mySQLconnection;
+	const timestamp = Math.floor(new Date().getTime() / 1000);
+
+	connection.execute(`INSERT INTO
+		userStats (sessionId, timestamp, query, target, paramTimeStart, paramTimeEnd)
+		VALUES (?,?,?,?,?,?)
+	`, [
+		sessionId,
+		timestamp,
+		query,
+		target,
+		timeStart,
+		timeEnd
+	]);
+}
 async function getLastData(id) {
 	const connection = await mySQLconnection;
 
@@ -113,10 +132,11 @@ async function getLastData(id) {
 			FROM lastWeatherData`))[0];
 	}else{
 		rows = (await connection.execute(`
-		SELECT *
+		SELECT stationId, timestamp, temperature, humidity, pressure, wind, gust, direction, rain
 		FROM lastWeatherData
 		WHERE stationId = ?`, [id]))[0];
 	}
+
 	return rows;
 }
 
