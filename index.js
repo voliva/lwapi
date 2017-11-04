@@ -3,6 +3,8 @@ const app = new Koa();
 const router = require('koa-router')();
 const cors = require('koa-cors');
 const mysql2 = require('mysql2/promise');
+const bodyParser = require('koa-bodyparser');
+const request = require('request-promise-native');
 
 let mySQLconnection = createMySQLConnection(0);
 
@@ -47,10 +49,39 @@ router
 			saveUserEvent(sessionId, 'windData', windData[0], windData[1], windData[2]);
 		}
 		ctx.body = JSON.stringify(result);
+	})
+	.post('/contact', async (ctx, next) => {
+		ctx.assert(!!ctx.query.subject, 400, 'Missing subject');
+		const subject = ctx.query.subject;
+		const body = ctx.request.body;
+
+		let googleResult = false;
+		try {
+			googleResult = await validateCaptcha(body.gRecaptchaResponse);
+		}catch(ex) {}
+
+		if(googleResult) {
+			const connection = await mySQLconnection;
+		
+			connection.execute(`INSERT INTO
+				sponsorRequests (company, email, web, comments)
+				VALUES (?,?,?,?)
+			`, [
+				body.company,
+				body.email,
+				body.web,
+				body.comments
+			]);
+
+			ctx.body = 'ok';
+		}else {
+			ctx.body = 'err';
+		}
 	});
 
 app
   .use(cors())
+  .use(bodyParser())
   .use(router.routes())
   .use(router.allowedMethods());
 
@@ -70,6 +101,17 @@ function formatToArrayTable(rows) {
 			}
 		}))
 	]
+}
+
+async function validateCaptcha(value) {
+	const postData = {
+		secret: process.env.GOOGLE_CAPTCHA_SECRET,
+		response: value
+	};
+
+	return request.post('https://www.google.com/recaptcha/api/siteverify', {
+		form: postData
+	}).then(r => JSON.parse(r).success);
 }
 
 async function createMySQLConnection(nErrors) {
