@@ -2,11 +2,9 @@ const Koa = require('koa');
 const app = new Koa();
 const router = require('koa-router')();
 const cors = require('koa-cors');
-const mysql2 = require('mysql2/promise');
+const mysql = require('./mysqlConnection');
 const bodyParser = require('koa-bodyparser');
 const request = require('request-promise-native');
-
-let mySQLconnection = createMySQLConnection(0);
 
 // How many data points should be given any timespan (1 day, 7 days?)
 const DATA_POINTS = Math.floor(60*24/5); // 1-day 5 minutes/tick => 288 values
@@ -61,7 +59,7 @@ router
 		}catch(ex) {}
 
 		if(googleResult) {
-			const connection = await mySQLconnection;
+			const connection = await mysql.connection;
 		
 			connection.execute(`INSERT INTO
 				sponsorRequests (company, email, web, comments)
@@ -114,42 +112,8 @@ async function validateCaptcha(value) {
 	}).then(r => JSON.parse(r).success);
 }
 
-async function createMySQLConnection(nErrors) {
-	nErrors = nErrors || 0;
-	if(nErrors >= 6) {
-		// After 6 tries, stop and exit
-		console.log(`Got ${nErrors} connection errors to DB in a row, stopping lwapi :(`);
-		process.exit(0);
-	}
-
-	const ret = mysql2.createConnection({
-		host: process.env.SQL_DB_HOST,
-		user: process.env.SQL_DB_USER,
-		password: process.env.SQL_DB_PSW,
-		database: process.env.SQL_DB_NAME
-	});
-
-	try {
-		const connection = await ret;
-		connection.once('error', (err) => {
-			console.log('error', err);
-			mySQLconnection = createMySQLConnection();
-		});
-		return connection;
-	}catch(ex) {
-		console.log(ex);
-		await sleep(5000);
-		return createMySQLConnection(nErrors+1);
-	}
-}
-function sleep(ms) {
-	return new Promise(resolve => {
-		setTimeout(resolve, ms);
-	});
-}
-
 async function saveUserEvent(sessionId, query, target, timeStart = null, timeEnd = null) {
-	const connection = await mySQLconnection;
+	const connection = await mysql.connection;
 	const timestamp = Math.floor(new Date().getTime() / 1000);
 
 	connection.execute(`INSERT INTO
@@ -165,7 +129,7 @@ async function saveUserEvent(sessionId, query, target, timeStart = null, timeEnd
 	]);
 }
 async function getLastData(id) {
-	const connection = await mySQLconnection;
+	const connection = await mysql.connection;
 
 	let rows;
 	if(id === 'all') {
@@ -190,7 +154,7 @@ const polar_keys = [{
     p: 360
 }];
 async function getWindData(stationId, startTime, endTime) {
-	const connection = await mySQLconnection;
+	const connection = await mysql.connection;
 
 	const data = (await connection.execute(`
 		SELECT wind,gust,direction,timestamp
