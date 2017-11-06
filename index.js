@@ -48,6 +48,51 @@ router
 		}
 		ctx.body = JSON.stringify(result);
 	})
+	.get('/stats', async (ctx, next) => {
+		const connection = await mysql.connection;
+		// Last week data
+		const today = new Date();
+		const weekAgo = new Date(today.getTime() - 7*24*60*60*1000);
+		// sessionId, timestamp, query, target, paramTimeStart, paramTimeEnd
+		const data = (await connection.query('SELECT * FROM userStats WHERE timestamp > ' + Math.floor(weekAgo.getTime()/1000)))[0];
+		const users = data.reduce((users, row) => {
+			users[row.sessionId] = users[row.sessionId] || [];
+			users[row.sessionId].push(row);
+			return users;
+		}, {});
+		const stationDataQueries = data.filter(d => !!d.target);
+		const stations = stationDataQueries.reduce((stations, row) => {
+			stations[row.target] = stations[row.target] || [];
+			stations[row.target].push(row);
+			return stations;
+		}, {});
+
+		const usersArr = [];
+		for(id in users) {
+			usersArr.push(users[id]);
+		}
+		usersArr.sort((u1, u2) => u2.length - u1.length);
+
+		const stationsArr = [];
+		for(id in stations) {
+			stationsArr.push({
+				id,
+				rows: stations[id]
+			});
+		}
+		stationsArr.sort((s1, s2) => s2.rows.length - s1.rows.length);
+
+		const result = {};
+		result.nActiveUsers = usersArr.length;
+		result.totalEvents = data.length;
+		result.nEventsByUser = usersArr.map(u => u.length);
+		result.eventsByStation = stationsArr.map(s => ({
+			id: s.id,
+			events: s.rows.length
+		}));
+
+		ctx.body = result;
+	})
 	.post('/contact', async (ctx, next) => {
 		ctx.assert(!!ctx.query.subject, 400, 'Missing subject');
 		const subject = ctx.query.subject;
